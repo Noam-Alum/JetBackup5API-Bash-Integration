@@ -99,8 +99,6 @@ ANSI_REVERSED_VIDEO="\e[7m"
 ANSI_STRIKETHROUGH="\e[9m"
 ANSI_END="\e[0m"
 
-JETBACKUP_API_FAIL_MSG="While executing \$FUNC_NAME:\nMessage: \$FUNC_MSG\n\n EXEC:\n $JETBACKUP_API -F \'\$FUNC_NAME\' -D \'\$FUNC_OPT\'\n\n Output:\n\$FUNC_RES\n"
-
 
 
 ##########################
@@ -271,7 +269,7 @@ function execute_function {
       echo "$FUNC_RES"
     fi
 	else
-		fail 2 "$FAIL_MSG"
+		fail 2 "While executing $FUNC_NAME:\nMessage: $FUNC_MSG\n\n EXEC:\n $JETBACKUP_API '$FUNC_NAME' -D '$FUNC_OPT'\n\n Output:\n$FUNC_RES\n"
 	fi
 }
 
