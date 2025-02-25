@@ -99,8 +99,7 @@ ANSI_REVERSED_VIDEO="\e[7m"
 ANSI_STRIKETHROUGH="\e[9m"
 ANSI_END="\e[0m"
 
-SUCCESS_MSG="${ANSI_BOLD}${ANSI_GREEN} • Success:${ANSI_END} ${ANSI_BOLD}(\${FUNC_NAME:=-}) While executing \$FUNC_NAME\n\nMessage: \$FUNC_MSG\n\n EXEC:\n $JETBACKUP_API -F \'\$FUNC_NAME\' -D \'\$FUNC_OPT\'\n\n Output:\n\$FUNC_RES\n${ANSI_END}"
-FAIL_MSG="While executing \$FUNC_NAME:\nMessage: \$FUNC_MSG\n\n EXEC:\n $JETBACKUP_API -F \'\$FUNC_NAME\' -D \'\$FUNC_OPT\'\n\n Output:\n\$FUNC_RES\n"
+JETBACKUP_API_FAIL_MSG="While executing \$FUNC_NAME:\nMessage: \$FUNC_MSG\n\n EXEC:\n $JETBACKUP_API -F \'\$FUNC_NAME\' -D \'\$FUNC_OPT\'\n\n Output:\n\$FUNC_RES\n"
 
 
 
@@ -135,9 +134,8 @@ which jq &> /dev/null || fail 3 "jq not found, please install and try again."
 #
 
 function jbjq {
-  local IS_EVAL DATA_USED DATA FILE_PATH REQUEST JQ_RESPONSE
+  local IS_EVAL DATA REQUEST JQ_RESPONSE
   IS_EVAL=false
-  DATA_USED=false
 
   # Expecting type, file, data and request
   while getopts ":er:d:f:" opt; do
@@ -152,27 +150,24 @@ function jbjq {
         DATA="${OPTARG}"
         ;;
       :)
-        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
         fail 3 "Error while using ${FUNCNAME[0]} function, option -${OPTARG} requires an argument."
         ;;
       ?)
-        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
         fail 3 "Error while using ${FUNCNAME[0]} function, invalid option: -${OPTARG}."
         ;;
     esac
   done
 
   test -z "$REQUEST" && fail 3 "No request provided!"
-  if ! $DATA_USED; then
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
-    fail 3 "No data provided!"
-  fi
+  test -z "$DATA" && fail 3 "No request provided!"
 
   if ! JQ_RESPONSE="$(jq -r "$REQUEST" <<< "$DATA" 2>&1)"; then
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
     fail 3 "jq failed, error:\n$JQ_RESPONSE\n"
   elif [ "$JQ_RESPONSE" == "null" ]; then
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
     fail 3 "jq failed fetching \"$REQUEST\" from:\n\n$DATA\n"
   else
     if $IS_EVAL; then
@@ -181,6 +176,25 @@ function jbjq {
       echo "$JQ_RESPONSE"
     fi
   fi
+}
+
+# **array_contains**
+# | Check if array contains an item
+#
+
+function array_contains {
+  local ITEM ARRAY_ITEMS
+  ITEM="$1"
+  shift 1
+  ARRAY_ITEMS=("$@")
+
+  for ARRAY_ITEM in "${ARRAY_ITEMS[@]}"
+  do
+    [[ "$ARRAY_ITEM" = "$ITEM" ]] && return 0
+  done
+
+  # Could not find item in array
+  return 1
 }
 
 # **gen_random**
@@ -204,7 +218,7 @@ function gen_random {
       CHARSET="0123456789"
       ;;
     *)
-      FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+      FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
       fail 3 "Error while using \"${FUNCNAME[0]}\" function, not a valid option ($GR_OPT), refer to \"https://docs.alum.sh/utils.sh/functions/gen_random.html\" for more information."
       ;;
   esac
@@ -213,7 +227,7 @@ function gen_random {
   if [ -z "${GR_LEN//[0-9]}" ]; then
     RES="$(tr -dc "$CHARSET" < /dev/urandom | head -c "$GR_LEN")"
   else
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
     fail 3 "Error while using \"${FUNCNAME[0]}\" function, length not an int ($GR_LEN), refer to \"https://docs.alum.sh/utils.sh/functions/gen_random.html\" for more information."
   fi
 
@@ -221,7 +235,7 @@ function gen_random {
 	  echo "$RES"
 	  return 0
   else
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
 	  fail 4 "Unknown error while using \"${FUNCNAME[0]}\" function, refer to \"https://docs.alum.sh/utils.sh/functions/gen_random.html\" for more information."
   fi
 }
@@ -242,34 +256,22 @@ function execute_function {
 	# Wait function execution delay
 	sleep "${EXECUTE_FUNCTION_DELAY:-0.5}"
 
-	FUNC_RES="$($JETBACKUP_API "$FUNC_NAME -D '$FUNC_OPT'")"
+	FUNC_RES="$($JETBACKUP_API -F "$FUNC_NAME" -D "$FUNC_OPT")"
 	FUNC_SUC="$(jbjq -r ".success" -d "$FUNC_RES")"
 	FUNC_MSG="$(jbjq -r ".message" -d "$FUNC_RES")"
 
 	if [ "$FUNC_SUC" == "1" ]; then
-		if [ ${#FUNC_REQ[@]} -ne 0 ]; then
+		if [ ${#FUNC_REQ[@]} -ne 0 ] && [ -n "${FUNC_REQ[*]}" ]; then
       for R in "${FUNC_REQ[@]}"
       do
 			  RES="$(jbjq -r "$R" -d "$FUNC_RES")"
 			  echo "$RES"
       done
-
-      if $RES_TO_STDERR; then
-        echo -e "$(eval echo "$SUCCESS_MSG")" >&2
-      fi
-
-      return 0
-		else
-			echo -e "$(eval echo "$SUCCESS_MSG")"
-
-      if $RES_TO_STDERR; then
-        echo -e "$SUCCESS_MSG" >&2
-      fi
-
-			return 0
-		fi
+    else
+      echo "$FUNC_RES"
+    fi
 	else
-		fail 2 "$(eval echo "$FAIL_MSG")"
+		fail 2 "$FAIL_MSG"
 	fi
 }
 
@@ -327,14 +329,14 @@ function find_args {
             fi
             ;;
           *) # Too many arguments
-            FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+            FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
             fail 3 "Too many arguments: ${ITEM_DATA[*]}"
             ;;
         esac
         echo "local $KEY=\"$VALUE\""
         unset ITEM_INDEX
       else
-        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
         fail 3 "Error while using \"${FUNCNAME[0]}\" function, Invalid key: $KEY."
       fi
       shift 2
@@ -342,7 +344,7 @@ function find_args {
   done
 
   if [ "$find_args_TTL" -le 0 ]; then
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
     fail 3 "Error while using \"${FUNCNAME[0]}\" function, max TTL for while loop reached! (Probably a loop)"
   fi
 }
@@ -387,11 +389,11 @@ function set_options {
         FAILED_MSG="${OPTARG}"
         ;;
       :)
-        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
         fail 3 "Error while using ${FUNCNAME[0]} function, option -${OPTARG} requires an argument."
         ;;
       ?)
-        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
         fail 3 "Error while using ${FUNCNAME[0]} function, invalid option: -${OPTARG}."
         ;;
     esac
@@ -402,12 +404,12 @@ function set_options {
   fi
 
   if [ -z "$OPT_NAME" ]; then
-    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+    FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
     fail 3 "Error while using ${FUNCNAME[0]} function, no variable name supplied."
   else
     if $REQUIRED; then
       if [ -z "$VAR_VALUE" ]; then
-        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> lib/core.sh - ${FUNCNAME[0]}"
+        FUNC_NAME="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
         fail 3 "$FAILED_MSG"
       else
         echo "$(if [ -n "$CURRENT_OPTIONS" ] && [ -n "$VAR_VALUE" ]; then echo "&"; fi)$VAR_VALUE"
@@ -2150,9 +2152,6 @@ function check_queue_group {
         QUEUE_BACKUP_ID\
         QUEUE_GROUP_LOG\
         RES
-
-  # Verify that queues.sh is sourced
-  source "$JB5_CI_CD_DIR/lib/queues.sh"
 
   # Set mode
   # shellcheck disable=SC2028
