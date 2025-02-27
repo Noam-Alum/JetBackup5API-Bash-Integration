@@ -62,7 +62,6 @@ JETBACKUP_CUSTOM_KEYS=(
 )
 
 ## General
-JETBACKUP_API="$JETBACKUP_API_PATH -O json -F"
 EXECUTE_FUNCTION_DELAY="0.3"
 ERROR_LOCATION="jb5_integration.bash"
 
@@ -97,7 +96,8 @@ function jb5api::fail {
 }
 # | Check dependencies
 which jq &> /dev/null || jb5api::fail 3 "jq not found, please install and try again."
-JETBACKUP_API_PATH="$(which jetbackupapi 2> /dev/null)" || jb5api::fail 3 "jetbackupapi not found, Is JetBackup installed?"
+JETBACKUP_API_PATH="$(which jetbackup5api 2> /dev/null)" || jb5api::fail 3 "jetbackup5api not found, Is JetBackup installed?"
+JETBACKUP_API="$JETBACKUP_API_PATH -O json -F"
 
 # **jb5api::jbjq**
 # | Wraps jq so when it exists it would be handled by the script
@@ -215,9 +215,9 @@ function jb5api::gen_random {
 #
 
 function jb5api::execute_function {
-  local ERROR_LOCATION FUNC_OPT FUNC_REQ FUNC_RES FUNC_SUC FUNC_MSG RES_MSG RES JB5_LOG_RESPONSE
+  local FUNCTION_NAME FUNC_OPT FUNC_REQ FUNC_RES FUNC_SUC FUNC_MSG RES_MSG RES JB5_LOG_RESPONSE
 
-  ERROR_LOCATION="$1"
+  FUNCTION_NAME="${1/jb5api::/}"
   FUNC_OPT="$2"
   shift 2
   FUNC_REQ=()
@@ -226,7 +226,7 @@ function jb5api::execute_function {
 	# Wait function execution delay
 	sleep "${EXECUTE_FUNCTION_DELAY:-0.5}"
 
-	FUNC_RES="$($JETBACKUP_API -F "$ERROR_LOCATION" -D "$FUNC_OPT")"
+	FUNC_RES="$(jb5api::jbjq -r "." -d "$($JETBACKUP_API -F "$FUNCTION_NAME" -D "$FUNC_OPT")")"
 	FUNC_SUC="$(jb5api::jbjq -r ".success" -d "$FUNC_RES")"
 	FUNC_MSG="$(jb5api::jbjq -r ".message" -d "$FUNC_RES")"
 
@@ -241,7 +241,7 @@ function jb5api::execute_function {
       echo "$FUNC_RES"
     fi
 	else
-		echo -e "While executing $ERROR_LOCATION:\nMessage: $FUNC_MSG\n\n EXEC:\n $JETBACKUP_API '$ERROR_LOCATION' -D '$FUNC_OPT'\n\n Output:\n$FUNC_RES\n" >&2
+		echo -e "Error while executing jb5api::$FUNCTION_NAME:\n\nMessage: $FUNC_MSG\n\nWrapper EXEC:\n$JETBACKUP_API '$FUNCTION_NAME' -D '$FUNC_OPT'\n\nResponse:\n$FUNC_RES\n" >&2
 		return 2
 	fi
 }
