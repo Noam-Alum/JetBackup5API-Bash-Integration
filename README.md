@@ -34,7 +34,7 @@ jb5api::listAccounts --request '.data.accounts[-1].username'
 
 Click here for full documentation:
 
-[![Documentation Button](https://readme-components.vercel.app/api?component=button&text=Documentation)](Documentation)
+[![Documentation Button](https://readme-components.vercel.app/api?component=button&text=Documentation)](docs/README.md)
 
 ---
 
