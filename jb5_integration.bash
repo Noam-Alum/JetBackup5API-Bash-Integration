@@ -2394,11 +2394,7 @@ function jb5api::GetProcessStatus {
 #################################
 
 # **jb5api::check_queue_group**
-# |
 # | Checks the status of a queue group:
-# |   1. Backups:
-# |      Checks the backup id, once found, checks the status.
-# |
 #
 
 function jb5api::check_queue_group::check_queue_item_status {
@@ -2601,8 +2597,7 @@ function jb5api::check_queue_group {
 }
 
 # **jb5api::get_account_by_name**
-# |
-# | Returns account ID by name
+# | Returns account ID by username
 # |
 
 function jb5api::get_account_by_name {

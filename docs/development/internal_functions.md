@@ -1,7 +1,7 @@
 # JetBackup5API-Bash-Integration - Internal functions
 
 >[!NOTE]
-> Some functions might use [internal variables](/docs/internal_variables.md).
+> Some functions might use [internal variables](/docs/development/internal_variables.md).
 
 ## jb5api::jbjq
 

@@ -20,7 +20,7 @@ jb5api::listAccounts --request '.data.accounts[-1].username'
 
 ## **Using API call wrappers**
 
-> Any [JetBackup 5 API call](https://docs.jetbackup.com/v5.3/api/) can be invoked using this library.
+Any [JetBackup 5 API call](https://docs.jetbackup.com/v5.3/api/) can be invoked using this library.
 
 ### **Structure of API Call Wrappers**
 
@@ -53,7 +53,7 @@ Is equivalent to:
 jbtapi::listAccounts --orphan 1
 ```
 
-> If a function requires a specific option, the wrapper will notify you accordingly, prompting you to provide the necessary arguments.
+If a function requires a specific option, the wrapper will notify you accordingly, prompting you to provide the necessary arguments.
 
 >[!IMPORTANT]  
 > To use the `_id` option, use `--id` instead of `--_id`.
@@ -73,6 +73,72 @@ Where:
 ### **Handling the `--request` Option**
 
 If a function is run without a `--request` option, it will return the entire response from JetBackup 5.
+
+**For example:**
+```bash
+jb5api::listAccounts --find "username,noam" --request ".data.accounts[-1].homedir"
+```
+Would return:
+```
+/home/noam
+```
+
+## General purpose functions
+
+Some tasks are hard to make via a bash script, like checking if a queue group has finished.
+
+The _general purpose functions_ are meant so these tasks can be easily integrated into your scripts!
+
+> Check out the [general purpose functions](general_purpose_functions.md)
+
+
+## Wrappers & functions in action:
+
+```bash
+read -rp "Username : " USERNAME
+
+if ! ACCOUNT_ID="$(jb5api::get_account_by_name --c_username "$USERNAME" 2> /dev/null)"; then
+	echo " - Account not found."
+	exit 1
+else
+	echo " - Found user. => \"$USERNAME\""
+fi
+DESTINATION_NAME="$USERNAME - Example destination - $(jb5api::gen_random str 4)"
+DESTINATION_ID="$(jb5api::manageDestination --action "create"\
+                                            --type "Localv2"\
+                                            --name "$DESTINATION_NAME"\
+                                            --owner "$ACCOUNT_ID"\
+                                            --options "path,/tmp/$(jb5api::gen_random str 4)/"\
+                                            --request ".data._id" 2> /dev/null
+                )"
+if [ "$?" -ne 0 ]; then
+	echo " - Cannot create destination."
+	exit 1
+else
+	echo " - Created destination => \"$DESTINATION_NAME\""
+	echo " - Starting reindex."
+	if ! jb5api::check_queue_group --c_type 8 --c_id "$DESTINATION_ID" &> /dev/null; then
+		echo " - Reindex failed."
+		exit 1
+	else
+		echo " - Reindex finished."
+	fi
+fi
+```
+
+**Results:**
+```
+[root@server examples]# ./example.sh 
+Username : NoSuchUser
+ - Account not found.
+[root@server examples]# ./example.sh 
+Username : noam
+ - Found user. => "noam"
+ - Created destination => "noam - Example destination - dRoV"
+ - Starting reindex.
+ - Reindex finished.
+[root@server examples]#
+```
 
 ## **Exit Codes**
 
