@@ -4,7 +4,7 @@
 
 JetBackup5API-Bash-Library is a Bash library that provides full access to the [JetBackup 5 API](https://docs.jetbackup.com/v5.3/api/).
 
-![Hero](https://docs.jetbackup.com/v5.3/images/jetbackup_solid_navbar.png)
+![JetBackupLogo](https://docs.jetbackup.com/v5.3/images/jetbackup_solid_navbar.png)
 
 ### How to use
 
@@ -27,6 +27,8 @@ jb5api::listAccounts --request '.data.accounts[-1].username'
 .
 .
 ```
+
+![Hero](/images/hero.png)
 
 ### Simple example of usage:
 
