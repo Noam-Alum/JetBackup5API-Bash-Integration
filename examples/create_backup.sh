@@ -6,8 +6,9 @@ source ../jb5_integration.bash
 # Get account by name
 read -rp "For which user would you like to create a backup on demand? : " USERNAME
 
-if ! ACCOUNT_ID="$(jb5api::get_account_by_name --c_username "$USERNAME")"; then
-	jb5api::fail 3 "Cannot create backup."
+if ! ACCOUNT_ID="$(jb5api::get_account_by_name --c_username "$USERNAME" 2> /dev/null)"; then
+	echo " - Account not found."
+	exit 1
 else
 	echo " - Found user. => \"$USERNAME\""
 fi
@@ -17,15 +18,18 @@ DESTINATION_ID="$(jb5api::manageDestination --action "create"\
                                             --name "$DESTINATION_NAME"\
                                             --owner "$ACCOUNT_ID"\
                                             --options "path,/tmp/$(jb5api::gen_random str 4)/"\
-                                            --request ".data._id"
+                                            --request ".data._id" 2> /dev/null
                 )"
+# shellcheck disable=SC2181
 if [ "$?" -ne 0 ]; then
-	jb5api::fail 2 "Cannot create destination."
+	echo " - Cannot create destination."
+	exit 1
 else
 	echo " - Created destination => \"$DESTINATION_NAME\""
 	echo " - Starting reindex."
 	if ! jb5api::check_queue_group --c_type 8 --c_id "$DESTINATION_ID" &> /dev/null; then
-		jb5api::fail 3 "Reindex failed."
+		echo " - Reindex failed."
+		exit 1
 	else
 		echo " - Reindex finished."
 	fi
@@ -45,10 +49,12 @@ BACKUP_JOB_ID="$(jb5api::manageBackupJob --action "create"\
                                          --owner "$ACCOUNT_ID"\
                                          --disabled 0\
                                          --options 1\
-                                         --request ".data._id"
+                                         --request ".data._id" 2> /dev/null
                  )"
+# shellcheck disable=SC2181
 if [ "$?" -ne 0 ]; then
-	jb5api::fail 2 "Cannot create backup job."
+	echo " - Cannot create backup job."
+	exit 1
 else
 	echo " - Created a backup job => \"$BACKUP_JOB_NAME\""
 fi
@@ -57,24 +63,28 @@ if jb5api::runBackupJobManually --id "$BACKUP_JOB_ID" &> /dev/null; then
 	echo " - Sent backup job to queue."
 	echo " - Checking backup status."
 	if ! jb5api::check_queue_group --c_type 1 --c_id "$BACKUP_JOB_ID" &> /dev/null; then
-		jb5api::fail 3 "Backup failed."
+		echo " - Backup failed."
+		exit 1
 	else
 		echo " - Backup finished."
 	fi
 else
-	jb5api::fail 3 "Could not run backup job manually,"
+	echo " - Could not run backup job manually,"
+	exit 1
 fi
 
 if jb5api::deleteBackupJob --id "$BACKUP_JOB_ID" &> /dev/null;then
 	echo " - Removed backup job => \"$BACKUP_JOB_NAME\""
 else
-	jb5api::fail 3 "Could not remove backup job."
+	echo " - Could not remove backup job."
+	exit 1
 fi
 
 if jb5api::deleteDestination --id "$DESTINATION_ID" &> /dev/null;then
-        echo " - Removed destination => $DESTINATION_NAME"
+    echo " - Removed destination => $DESTINATION_NAME"
 else
-        jb5api::fail 3 "Could not remove destination."
+    echo " - Could not remove destination."
+    exit 1
 fi
 
 echo " - Done."
