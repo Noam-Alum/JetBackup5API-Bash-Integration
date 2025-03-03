@@ -58,7 +58,7 @@ JETBACKUP_KEYS=(
 )
 
 JETBACKUP_CUSTOM_KEYS=(
-  "message" "success" "request" "requirement" "b_type" "b_username" "b_id" "file" "data"
+  "message" "success" "request" "requirement" "c_type" "c_username" "c_id" "file" "data"
 )
 
 ## General
@@ -97,7 +97,7 @@ function jb5api::fail {
 # | Check dependencies
 which jq &> /dev/null || jb5api::fail 3 "jq not found, please install and try again."
 JETBACKUP_API_PATH="$(which jetbackup5api 2> /dev/null)" || jb5api::fail 3 "jetbackup5api not found, Is JetBackup installed?"
-JETBACKUP_API="$JETBACKUP_API_PATH -O json -F"
+JETBACKUP_API="$JETBACKUP_API_PATH -O json"
 
 # **jb5api::jbjq**
 # | Wraps jq so when it exists it would be handled by the script
@@ -241,7 +241,7 @@ function jb5api::execute_function {
       echo "$FUNC_RES"
     fi
 	else
-		echo -e "Error while executing jb5api::$FUNCTION_NAME:\n\nMessage: $FUNC_MSG\n\nWrapper EXEC:\n$JETBACKUP_API '$FUNCTION_NAME' -D '$FUNC_OPT'\n\nResponse:\n$FUNC_RES\n" >&2
+		echo -e "Error while executing ${FUNCNAME[1]}:\n\nMessage: $FUNC_MSG\n\nWrapper EXEC:\n$JETBACKUP_API '$FUNCTION_NAME' -D '$FUNC_OPT'\n\nResponse:\n$FUNC_RES\n" >&2
 		return 2
 	fi
 }
@@ -300,15 +300,15 @@ function jb5api::find_args {
             fi
             ;;
           *) # Too many arguments
-            ERROR_LOCATION="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
+            ERROR_LOCATION="${FUNCNAME[1]}"
             jb5api::fail 3 "Too many arguments: ${ITEM_DATA[*]}"
             ;;
         esac
         echo "local $KEY=\"$VALUE\""
         unset ITEM_INDEX
       else
-        ERROR_LOCATION="${BASH_SOURCE[-1]##*/} -> jb5_integration.bash - ${FUNCNAME[0]}"
-        jb5api::fail 3 "Error while using \"${FUNCNAME[0]}\" function, Invalid key: $KEY."
+        ERROR_LOCATION="${FUNCNAME[1]}"
+        jb5api::fail 3 "Error while using \"${FUNCNAME[0]}\" function for \"${FUNCNAME[1]}\", Invalid key: $KEY."
       fi
       shift 2
       (( find_args_TTL-- ))
@@ -533,6 +533,7 @@ function jb5api::listAccounts {
   eval "$(jb5api::find_args "$@")"
 
 	OPTIONS+="$(jb5api::set_options -o "$OPTIONS" -n "orphan" -v "$orphan" -d "0")"
+	OPTIONS+="$(jb5api::set_options -o "$OPTIONS" -n "find" -v "$find")"
 
 	jb5api::execute_function "${FUNCNAME[0]}" "$OPTIONS" "$request" || return 2
 }
@@ -2101,7 +2102,7 @@ function jb5api::GetProcessStatus {
 # | General purpose functions | #
 #################################
 
-# **check_queue_group**
+# **jb5api::check_queue_group**
 # |
 # | Checks the status of a queue group:
 # |   1. Backups:
@@ -2109,12 +2110,26 @@ function jb5api::GetProcessStatus {
 # |
 #
 
+function jb5api::check_queue_group::check_queue_item_status {
+  local QUEUE_GROUP_STATUS QUEUE_GROUP_LOG
+  if [[ -n "$1" ]]; then QUEUE_GROUP_STATUS="$1"; else jb5api::fail 3 "No queue group status provided!"; fi
+  if [[ -n "$2" ]]; then QUEUE_GROUP_LOG="$2"; else jb5api::fail 3 "No queue group log provided!"; fi
+
+  if [[ -z "$QUEUE_GROUP_STATUS" || ! "$QUEUE_GROUP_STATUS" =~ ^[0-9]+$ ]]; then
+    jb5api::fail 3 "No usable queue group status provided. ($QUEUE_GROUP_STATUS)"
+  elif [[ "$QUEUE_GROUP_STATUS" =~ (104|101|102) ]]; then
+    jb5api::fail 2 "Backup failed, log file:\n\n$(echo -e "$(sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#' < "$QUEUE_GROUP_LOG")")"
+  elif [ "$QUEUE_GROUP_STATUS" -eq 103 ]; then
+    jb5api::fail 2 "Backup aborted, log file:\n\n$(echo -e "$(sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#' < "$QUEUE_GROUP_LOG")")"
+  else
+    return 0
+  fi
+}
+
 function jb5api::check_queue_group {
-  local MODE QUEUE_TOTAL\
+  local QUEUE_TOTAL\
         QUEUE_COUNT\
-        LOADING_QUEUE\
-        LOADING_BACKUP\
-        LOADING_DOWNLOAD_RESTORE\
+        LOADING_PARTICLES\
         PARTICLE_INDEX\
         LOADING\
         QUEUE_GROUP_DATA\
@@ -2124,172 +2139,172 @@ function jb5api::check_queue_group {
         QUEUE_GROUP_LOG\
         RES
 
-  # Set mode
-  # shellcheck disable=SC2028
-  # | This shellcheck is a false positive, I dont want to expand the escape sequences, I want to set the postfix.
-  MODE=$(test -z "$CI_PROJECT_DIR" && echo '\r' || echo '\n')
-
   # Find args
   eval "$(jb5api::find_args "$@")"
 
-  test -z "$b_type" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no queue type supplied."
+  test -z "$c_type" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no queue type supplied."
 
-  sleep 1
-  QUEUE_TOTAL=$(listQueueGroups --type "$b_type" --request ".data.total")
-  if [ "$QUEUE_TOTAL" -ne 0 ]; then QUEUE_COUNT=$(( QUEUE_TOTAL - 1 )); else jb5api::fail 3 "No group items in queue."; fi
+  QUEUE_TOTAL=$(jb5api::listQueueGroups --type "$c_type" --request ".data.total")
+  if [[ "$QUEUE_TOTAL" -ne 0 || ! "$QUEUE_GROUP_STATUS" =~ ^[0-9]+$ ]]; then
+    QUEUE_COUNT=$(( QUEUE_TOTAL - 1 ))
+  else
+    jb5api::fail 3 "No group items in queue."
+  fi
 
   # Loading
-  LOADING_QUEUE=('○' '◔' '◑' '●')
-  LOADING_BACKUP=('.' '⇧' '⇑' '↑')
-  LOADING_DOWNLOAD_RESTORE=('⋅' '⇩' '⇓' '↓')
-  readonly LOADING_DOWNLOAD_RESTORE LOADING_BACKUP LOADING_QUEUE
-
+  LOADING_PARTICLES=('○' '◔' '◑' '●')
+  readonly LOADING_PARTICLES
   PARTICLE_INDEX=0
+  LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+  FOUND_QUEUE_ITEM=false
+  QUEUE_GROUP_STATUS=0
+  MAX_REINDEX_TIMEOUT=120
 
-  case $b_type in
+  sleep 2
+
+  echo -ne "$LOADING Searching queue.           \r"
+
+  case $c_type in
     1) # Backup
-      test -z "$b_id" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no Backup job ID supplied."
-      LOADING="\e[1m[\e[33m${LOADING_QUEUE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
-      QUEUE_GROUP_DATA="$(listQueueGroups --type 1 --request ".")"
-      FOUND_QUEUE_ITEM=false
-
-      echo -ne "$LOADING Searching queue.           $MODE"  >&2
+      test -z "$c_id" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no Backup job ID supplied."
+      QUEUE_GROUP_DATA="$(jb5api::listQueueGroups --type 1 --request ".")"
       while [ "$QUEUE_COUNT" -ge 0 ]
       do
-          LOADING=" \e[1m[\e[33m${LOADING_QUEUE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
-          QUEUE_GROUP_STATUS=0
+          LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+
           QUEUE_BACKUP_ID="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT].data._id")"
           QUEUE_GROUP_LOG="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT].log_file")"
-          if [ "$b_id" == "$QUEUE_BACKUP_ID" ]; then
+
+          if [ "$c_id" == "$QUEUE_BACKUP_ID" ]; then
               FOUND_QUEUE_ITEM=true
-              echo -ne "$LOADING Backing up.           $MODE"  >&2
+              echo -ne "$LOADING Backing up.           \r"
               while [ "$QUEUE_GROUP_STATUS" -ne 100 ]
               do
-                  LOADING=" \e[1m[\e[33m${LOADING_BACKUP[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
-                  if [[ "$QUEUE_GROUP_STATUS" =~ (104|101|102) ]]; then
-                    jb5api::fail 2 "Backup failed, log file:\n\n$(echo -e "$("cat $QUEUE_GROUP_LOG" | sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#')")"
-                  elif [ "$QUEUE_GROUP_STATUS" -eq 103 ]; then
-                    jb5api::fail 2 "Backup aborted, log file:\n\n$(echo -e "$("cat $QUEUE_GROUP_LOG" | sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#')")"
-                  else
-                    PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
-                    echo -ne "$LOADING$MODE" >&2
+                  LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+                  PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
+                  if jb5api::check_queue_group::check_queue_item_status "$QUEUE_GROUP_STATUS" "$QUEUE_GROUP_LOG"; then
+                    echo -ne "$LOADING\r" >&2
+                    QUEUE_GROUP_STATUS="$(jb5api::listQueueGroups --type 1 --request ".data.groups[$QUEUE_COUNT].status")"
                   fi
-                  QUEUE_GROUP_STATUS="$(listQueueGroups --type 1 --request ".data.groups[$QUEUE_COUNT].status")"
               done
-              echo -ne "$CALL_TESTERS_DEPENDENCY_SUCCESS_PREFIX Backup finished.           \n"  >&2
-
-              # Return request
-              if [ -n "$request" ];then
-                RES="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT]$request")"
-                echo "${RES}"
-              fi
-              return 0
+              echo -ne "Backup finished.           \n"
+              break
           fi
           (( QUEUE_COUNT-- ))
           PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
-          echo -ne "$LOADING$MODE"  >&2
+          echo -ne "$LOADING\r"
       done
-
-      if ! $FOUND_QUEUE_ITEM; then
-        echo -ne "$CALL_TESTERS_DEPENDENCY_FAIL_PREFIX Could not find matching queue item id in queue.\n"  >&2
-        return 3
-      fi
     ;;
     2|4) # Restore & Download
-      test "$b_type" -eq 4 && TYPE_NAME="Download" || TYPE_NAME="Restore"
-      test -z "$b_id" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no Queue Group ID supplied."
-      QUEUE_GROUP_LOG="$(getQueueGroup --id "$b_id" --request ".data.log_file")"
-      LOADING=" \e[1m[\e[33m${LOADING_DOWNLOAD_RESTORE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
-      echo -ne "$LOADING ${TYPE_NAME}-ing.           $MODE"  >&2
+      FOUND_QUEUE_ITEM=tru
+      test "$c_type" -eq 4 && TYPE_NAME="Download" || TYPE_NAME="Restore"
+      test -z "$c_id" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no Queue Group ID supplied."
+      QUEUE_GROUP_LOG="$(jb5api::getQueueGroup --id "$c_id" --request ".data.log_file")"
+      LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+      echo -ne "$LOADING ${TYPE_NAME}-ing.           \r"
       QUEUE_GROUP_STATUS=0
       while [ "$QUEUE_GROUP_STATUS" -ne 100 ]
       do
-          LOADING=" \e[1m[\e[33m${LOADING_DOWNLOAD_RESTORE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
-          QUEUE_GROUP_STATUS="$(getQueueGroup --id "$b_id" --request ".data.status")"
-          if [[ "$QUEUE_GROUP_STATUS" =~ (104|101|102) ]]; then
-            jb5api::fail 2 "$TYPE_NAME failed, log file:\n\n$(echo -e "$("cat $QUEUE_GROUP_LOG" | sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#')")"
-          elif [ "$QUEUE_GROUP_STATUS" -eq 103 ]; then
-            jb5api::fail 2 "$TYPE_NAME aborted, log file:\n\n$(echo -e "$("cat $QUEUE_GROUP_LOG" | sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#')")"
-          else
+          LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+          QUEUE_GROUP_STATUS="$(jb5api::getQueueGroup --id "$c_id" --request ".data.status")"
+          if jb5api::check_queue_group::check_queue_item_status "$QUEUE_GROUP_STATUS" "$QUEUE_GROUP_LOG"; then
             PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
             echo -ne "$LOADING$MODE" >&2
           fi
       done
-      echo -ne "$CALL_TESTERS_DEPENDENCY_SUCCESS_PREFIX $TYPE_NAME finished.           \n"  >&2
-
-      # Return request
-      if [ -n "$request" ];then
-        RES="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT]$request")"
-        echo "${RES}"
-      fi
-      return 0
+      echo -ne "$TYPE_NAME finished.           \n"
+      retrun 0
     ;;
     8)
-      test -z "$b_id" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no destination ID supplied."
-      LOADING=" \e[1m[\e[33m${LOADING_QUEUE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
-      QUEUE_GROUP_DATA="$(listQueueGroups --type 8 --request ".")"
+      test -z "$c_id" && jb5api::fail 3 "Error while using ${FUNCNAME[0]} function, no destination ID supplied."
+      LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+      QUEUE_GROUP_DATA="$(jb5api::listQueueGroups --type 8 --request ".")"
       FOUND_QUEUE_ITEM=false
       REINDEX_FINISHED=false
       ITERATION_COUNT=0
 
-      echo -ne "$LOADING Searching queue.           $MODE"  >&2
+      echo -ne "$LOADING Searching queue.           \r"
       while [ "$QUEUE_COUNT" -ge 0 ]
       do
-          LOADING=" \e[1m[\e[33m${LOADING_QUEUE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
+          LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m"
           QUEUE_GROUP_STATUS=0
 
           QUEUE_REINDEX_ID="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT].data.id")"
           QUEUE_GROUP_LOG="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT].log_file")"
-          if [ "$b_id" == "$QUEUE_REINDEX_ID" ]; then
+          if [ "$c_id" == "$QUEUE_REINDEX_ID" ]; then
               FOUND_QUEUE_ITEM=true
-              echo -ne "$LOADING               Reindexing.               $MODE"  >&2
+              echo -ne "$LOADING               Reindexing.               \r"
 
               while [ "$ITERATION_COUNT" -le "$MAX_REINDEX_TIMEOUT" ]
               do
-                  LOADING=" \e[1m[\e[33m${LOADING_QUEUE[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m (Seconds: $ITERATION_COUNT)"
+                  LOADING="\e[1m[\e[33m${LOADING_PARTICLES[$PARTICLE_INDEX]}\e[0m\e[1m]\e[0m (Seconds: $ITERATION_COUNT)"
 
-                  if [[ "$QUEUE_GROUP_STATUS" =~ (104|101|102) ]]; then
-                    jb5api::fail 2 "Reindex failed, log file:\n\n$(echo -e "$("cat $QUEUE_GROUP_LOG" | sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#')")"
-                  elif [ "$QUEUE_GROUP_STATUS" -eq 103 ]; then
-                    jb5api::fail 2 "Reindex aborted, log file:\n\n$(echo -e "$("cat $QUEUE_GROUP_LOG" | sed 's#^#      \\e[0;100m\\e[1;97m#; s#$#\\e[0m\n\\e[0m#')")"
-                  elif [ "$QUEUE_GROUP_STATUS" -eq 100 ]; then
+                  if [ "$QUEUE_GROUP_STATUS" -eq 100 ]; then
                     REINDEX_FINISHED=true
                     break
-                  else
-                    PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
-                    echo -ne "$LOADING$MODE" >&2
                   fi
 
-                  QUEUE_GROUP_STATUS="$(listQueueGroups --type 8 --request ".data.groups[$QUEUE_COUNT].status")"
+                  if jb5api::check_queue_group::check_queue_item_status "$QUEUE_GROUP_STATUS" "$QUEUE_GROUP_LOG"; then
+                    PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
+                    echo -ne "$LOADING\r" >&2
+                  fi
+
+                  QUEUE_GROUP_STATUS="$(jb5api::listQueueGroups --type 8 --request ".data.groups[$QUEUE_COUNT].status")"
                   (( ITERATION_COUNT++ ))
                   sleep 1
               done
 
               if $REINDEX_FINISHED; then
-                echo -ne "$CALL_TESTERS_DEPENDENCY_SUCCESS_PREFIX Reindex finished.           \n"  >&2
+                echo -ne "Reindex finished.                                 \n"
+                break
               else
-                echo -ne "$CALL_TESTERS_DEPENDENCY_FAIL_PREFIX Max reindex timout reached. ($MAX_REINDEX_TIMEOUT)           \n"  >&2
+                echo -ne "Max reindex timout reached. ($MAX_REINDEX_TIMEOUT)           \n"
                 return 2
               fi
-
-              # Return request
-              if [ -n "$request" ];then
-                RES="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT]$request")"
-                echo "${RES}"
-              fi
-              return 0
           fi
           (( QUEUE_COUNT-- ))
           PARTICLE_INDEX=$(( (PARTICLE_INDEX + 1) % 4 ))
-          echo -ne "$LOADING$MODE"  >&2
+          echo -ne "$LOADING\r"
       done
-
-      if ! $FOUND_QUEUE_ITEM; then
-        echo -ne "$CALL_TESTERS_DEPENDENCY_FAIL_PREFIX Could not find matching queue item id in queue.\n"  >&2
-        return 3
-      fi
 
       sleep "${POST_REINDEX_DELAY:-2}"
     ;;
   esac
+
+  if ! $FOUND_QUEUE_ITEM; then
+    echo -ne "Could not find matching queue item id in queue.\n"
+    return 3
+  fi
+
+  # Return request
+  if [ -n "$request" ];then
+    RES="$(jb5api::jbjq -d "$QUEUE_GROUP_DATA" -r ".data.groups[$QUEUE_COUNT]$request")"
+    echo "${RES}"
+  fi
+}
+
+# **jb5api::get_account_by_name**
+# |
+# | Returns account ID by name
+# |
+
+function jb5api::get_account_by_name {
+  local ACCOUNT_ID TOTAL_ACCOUNTS ACCOUNTS_DATA
+  eval "$(jb5api::find_args "$@")"
+  if [[ -z "$c_username" ]]; then jb5api::fail 3 "No username provided!"; fi
+
+  ACCOUNTS_DATA="$(jb5api::listAccounts --find "username,$c_username")"
+  TOTAL_ACCOUNTS="$(jb5api::jbjq -r ".data.total" -d "$ACCOUNTS_DATA")"
+
+  if [[ -z "$TOTAL_ACCOUNTS" || ! "$TOTAL_ACCOUNTS" =~ ^[0-9]+$ ]]; then
+    jb5api::fail 3 "Could not fetch total number of accounts."
+  elif [ "$TOTAL_ACCOUNTS" -gt 1 ]; then
+    jb5api::fail 3 "More than one account found."
+  elif [ "$TOTAL_ACCOUNTS" -lt 1 ]; then
+    jb5api::fail 3 "No accounts found."
+  else
+    ACCOUNT_ID="$(jb5api::jbjq -r ".data.accounts[-1]._id" -d "$ACCOUNTS_DATA")"
+    echo "$ACCOUNT_ID"
+    return 0
+  fi
 }
