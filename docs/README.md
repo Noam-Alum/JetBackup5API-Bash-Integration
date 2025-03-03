@@ -1,22 +1,6 @@
-# **JetBackup5API-Bash-Integration**
+# **JetBackup5API Bash integration - Docs**
 
 This library provides Bash wrappers to interact with the [JetBackup 5 API](https://docs.jetbackup.com/v5.3/api/), enabling you to perform various JetBackup 5 operations directly from the command line.
-
-**You can either source via `curl`:**
-```bash
-#!/bin/bash
-source <(curl -LS "https://raw.githubusercontent.com/Noam-Alum/JetBackup5API-Bash-Integration/refs/heads/main/jb5_integration.bash")
-
-jb5api::listAccounts --request '.data.accounts[-1].username'
-```
-
-**Or download it and source directly:**
-```bash
-#!/bin/bash
-source jb5_integration.bash
-
-jb5api::listAccounts --request '.data.accounts[-1].username'
-```
 
 ## **Using API call wrappers**
 
