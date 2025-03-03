@@ -16,15 +16,15 @@ jb5api::check_queue_group [OPTIONS]...
 ### Options:
 - **--c_type**  
   [Queue group type](https://docs.jetbackup.com/v5.3/api/Queues/listQueueGroups.html).
-  - 1 Backup Queue
-  - 2 Restore
-  - 4 Download
-  - 8 Reindex
+  - **1** Backup Queue
+  - **2** Restore
+  - **4** Download
+  - **8** Reindex
 
 - **--c_id** - Depends on the type:
-    - 1) Backup Job ID.
-    - 2/4) Queue group ID.
-    - 8) Destination ID.
+    - **1\)** Backup Job ID.
+    - **2/4\)** Queue group ID.
+    - **8\)** Destination ID.
 
 ### Example Usage:
 
