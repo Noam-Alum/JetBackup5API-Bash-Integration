@@ -28,7 +28,7 @@
 # | Internal variables | #
 ##########################
 
-export ERROR_LOCATION JETBACKUP_KEYS JETBACKUP_CUSTOM_KEYS JETBACKUP_API EXECUTE_FUNCTION_DELAY MAX_REINDEX_TIMEOUT POST_REINDEX_DELAY ERROR_PREFIX
+export JETBACKUP_KEYS JETBACKUP_CUSTOM_KEYS JETBACKUP_API EXECUTE_FUNCTION_DELAY MAX_REINDEX_TIMEOUT POST_REINDEX_DELAY ERROR_PREFIX
 
 ## Keys
 JETBACKUP_KEYS=(
@@ -225,7 +225,7 @@ function jb5api::execute_function {
 }
 
 # **jb5api::find_args**
-# | Assigns command-line argument values to variables based on JETBACKUP_KEYS.
+# | Assigns command-line argument values to variables based on JETBACKUP_CUSTOM_KEYS and JETBACKUP_KEYS.
 #
 
 function jb5api::find_args {
@@ -300,15 +300,7 @@ function jb5api::find_args {
 }
 
 # **jb5api::set_options**
-# | Create the options value for JB5 functions.
-# |
-# | -r                    A boolean that tells if the option is required.
-# | -n                    The JB5 option name.
-# | -v                    The value for the given JB5 option.
-# | -d                    If needed, the default value for the given JB5 option. (if empty the option wont be used.)
-# | -o                    The current OPTIONS value.
-# | -m                    For required options, supply the error message.
-# |
+# | Appends options value for JB5 API calls.
 #
 
 function jb5api::set_options {
