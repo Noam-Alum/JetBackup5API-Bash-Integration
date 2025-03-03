@@ -22,9 +22,9 @@ jb5api::check_queue_group [OPTIONS]...
   - 8 Reindex
 
 - **--c_id** - Depends on the type:
-    - 1 Backup Queue) Backup Job ID.
-    - 2/4 Restore/Download Queue) Queue group ID.
-    - 8 Reindex) Destination ID.
+    - 1) Backup Job ID.
+    - 2/4) Queue group ID.
+    - 8) Destination ID.
 
 ### Example Usage:
 
